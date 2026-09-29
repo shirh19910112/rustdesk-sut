@@ -3,6 +3,7 @@
 #include <tchar.h>
 #include <uni_links_desktop/uni_links_desktop_plugin.h>
 #include <windows.h>
+#include <shobjidl_core.h>
 
 #include <algorithm>
 #include <iostream>
@@ -70,6 +71,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     if (get_rustdesk_app_name(app_name_buffer, 512) == 0) {
       app_name = std::wstring(app_name_buffer);
     }
+  }
+
+  // Keep RustDesk-SUT separate from the standard RustDesk taskbar group.
+  if (app_name == L"RustDesk-SUT") {
+    ::SetCurrentProcessExplicitAppUserModelID(L"shirh19910112.RustDesk-SUT");
   }
 
   // Uri links dispatch
