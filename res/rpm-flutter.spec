@@ -27,9 +27,9 @@ The best open-source remote desktop client software, written in Rust.
 mkdir -p "%{buildroot}/usr/share/rustdesk-sut" && cp -r ${HBB}/flutter/build/linux/x64/release/bundle/* -t "%{buildroot}/usr/share/rustdesk-sut"
 mv "%{buildroot}/usr/share/rustdesk-sut/rustdesk" "%{buildroot}/usr/share/rustdesk-sut/rustdesk-sut"
 mkdir -p "%{buildroot}/usr/bin"
-install -Dm 644 $HBB/res/rustdesk.service -t "%{buildroot}/usr/share/rustdesk-sut/files"
-install -Dm 644 $HBB/res/rustdesk.desktop -t "%{buildroot}/usr/share/rustdesk-sut/files"
-install -Dm 644 $HBB/res/rustdesk-link.desktop -t "%{buildroot}/usr/share/rustdesk-sut/files"
+install -Dm 644 $HBB/res/rustdesk.service "%{buildroot}/usr/share/rustdesk-sut/files/rustdesk-sut.service"
+install -Dm 644 $HBB/res/rustdesk.desktop "%{buildroot}/usr/share/rustdesk-sut/files/rustdesk-sut.desktop"
+install -Dm 644 $HBB/res/rustdesk-link.desktop "%{buildroot}/usr/share/rustdesk-sut/files/rustdesk-sut-link.desktop"
 install -Dm 644 $HBB/res/128x128@2x.png "%{buildroot}/usr/share/icons/hicolor/256x256/apps/rustdesk-sut.png"
 install -Dm 644 $HBB/res/scalable.svg "%{buildroot}/usr/share/icons/hicolor/scalable/apps/rustdesk-sut.svg"
 
@@ -60,7 +60,7 @@ esac
 cp /usr/share/rustdesk-sut/files/rustdesk-sut.service /etc/systemd/system/rustdesk-sut.service
 cp /usr/share/rustdesk-sut/files/rustdesk-sut.desktop /usr/share/applications/
 cp /usr/share/rustdesk-sut/files/rustdesk-sut-link.desktop /usr/share/applications/
-ln -sf /usr/share/rustdesk-sut/rustdesk /usr/bin/rustdesk-sut
+ln -sf /usr/share/rustdesk-sut/rustdesk-sut /usr/bin/rustdesk-sut
 systemctl daemon-reload
 systemctl enable rustdesk-sut
 systemctl start rustdesk-sut
@@ -84,8 +84,8 @@ case "$1" in
   0)
     # for uninstall
     rm /usr/bin/rustdesk-sut || true
-    rmdir /usr/lib/rustdesk || true
-    rmdir /usr/local/rustdesk || true
+    rmdir /usr/lib/rustdesk-sut || true
+    rmdir /usr/local/rustdesk-sut || true
     rmdir /usr/share/rustdesk-sut || true
     rm /usr/share/applications/rustdesk-sut.desktop || true
     rm /usr/share/applications/rustdesk-sut-link.desktop || true
@@ -93,7 +93,7 @@ case "$1" in
   ;;
   1)
     # for upgrade
-    rmdir /usr/lib/rustdesk || true
-    rmdir /usr/local/rustdesk || true
+    rmdir /usr/lib/rustdesk-sut || true
+    rmdir /usr/local/rustdesk-sut || true
   ;;
 esac
