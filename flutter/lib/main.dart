@@ -146,6 +146,14 @@ void runMainApp(bool startService) async {
   }
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
+
+  // Register the main window before Flutter builds DesktopHomePage.
+  // DesktopHomePage installs the active-window listener during initState().
+  // Without this early registration, a stale/sub-window hide event can arrive
+  // in the small gap before waitUntilReadyToShow() registers the main window,
+  // making the active set temporarily empty and causing the whole app to exit.
+  await rustDeskWinManager.registerActiveWindow(kWindowMainId);
+
   runApp(App());
 
   bool? alwaysOnTop;
