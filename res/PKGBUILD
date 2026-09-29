@@ -27,10 +27,10 @@ package() {
 	  mv "${pkgdir}/usr/share/rustdesk-sut/rustdesk" "${pkgdir}/usr/share/rustdesk-sut/rustdesk-sut"
   fi
   mkdir -p "${pkgdir}/usr/bin"
-  pushd ${pkgdir} && ln -s /usr/share/rustdesk-sut/rustdesk usr/bin/rustdesk-sut && popd
-  install -Dm 644 $HBB/res/rustdesk.service -t "${pkgdir}/usr/share/rustdesk-sut/files"
-  install -Dm 644 $HBB/res/rustdesk.desktop -t "${pkgdir}/usr/share/rustdesk-sut/files"
-  install -Dm 644 $HBB/res/rustdesk-link.desktop -t "${pkgdir}/usr/share/rustdesk-sut/files"
+  pushd ${pkgdir} && ln -s /usr/share/rustdesk-sut/rustdesk-sut usr/bin/rustdesk-sut && popd
+  install -Dm 644 $HBB/res/rustdesk.service "${pkgdir}/usr/share/rustdesk-sut/files/rustdesk-sut.service"
+  install -Dm 644 $HBB/res/rustdesk.desktop "${pkgdir}/usr/share/rustdesk-sut/files/rustdesk-sut.desktop"
+  install -Dm 644 $HBB/res/rustdesk-link.desktop "${pkgdir}/usr/share/rustdesk-sut/files/rustdesk-sut-link.desktop"
   install -Dm 644 $HBB/res/128x128@2x.png "${pkgdir}/usr/share/icons/hicolor/256x256/apps/rustdesk-sut.png"
   install -Dm 644 $HBB/res/scalable.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/rustdesk-sut.svg"
 }
