@@ -1,5 +1,5 @@
 {
-  "id": "com.rustdesk.RustDesk",
+  "id": "com.shirh19910112.RustDeskSUT",
   "runtime": "org.freedesktop.Platform",
   "runtime-version": "24.08",
   "sdk": "org.freedesktop.Sdk",
