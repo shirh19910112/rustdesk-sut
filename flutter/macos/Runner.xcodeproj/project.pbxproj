@@ -457,6 +457,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Manual;
 				PRODUCT_NAME = "RustDesk-SUT";
+				PRODUCT_MODULE_NAME = RustDesk_SUT;
 			};
 			name = Profile;
 		};
@@ -640,6 +641,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Manual;
 				PRODUCT_NAME = "RustDesk-SUT";
+				PRODUCT_MODULE_NAME = RustDesk_SUT;
 			};
 			name = Debug;
 		};
@@ -648,6 +650,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				PRODUCT_NAME = "RustDesk-SUT";
+				PRODUCT_MODULE_NAME = RustDesk_SUT;
 			};
 			name = Release;
 		};
