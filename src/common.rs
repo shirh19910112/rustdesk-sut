@@ -941,7 +941,9 @@ pub fn is_modifier(evt: &KeyEvent) -> bool {
 }
 
 pub fn check_software_update() {
-    if is_custom_client() {
+    // RustDesk-SUT is a deliberately isolated custom build, but it owns its
+    // update channel and should still check this fork's GitHub Releases.
+    if is_custom_client() && get_app_name() != "RustDesk-SUT" {
         return;
     }
     let opt = LocalConfig::get_option(keys::OPTION_ENABLE_CHECK_UPDATE);
