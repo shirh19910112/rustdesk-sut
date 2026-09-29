@@ -337,9 +337,10 @@ jobs:
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           sed -i '/dpiAware/d' res/manifest.xml
+          mv ./rustdesk/rustdesk.exe ./rustdesk/RustDesk-SUT.exe
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/RustDesk-SUT.exe
           popd
           mkdir -p ./SignOutput
           mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/RustDesk-SUT-${{ env.VERSION }}-${{ matrix.job.arch }}.exe
@@ -354,7 +355,6 @@ jobs:
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           pushd ./res/msi
-          Move-Item ../../rustdesk/rustdesk.exe ../../rustdesk/RustDesk-SUT.exe
           python preprocess.py --arp -d ../../rustdesk --app-name RustDesk-SUT
           nuget restore msi.sln
           $msiPlatform = if ('${{ matrix.job.arch }}' -eq 'aarch64') { 'ARM64' } else { 'x64' }
