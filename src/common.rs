@@ -122,6 +122,8 @@ impl Drop for SimpleCallOnReturn {
 }
 
 pub fn global_init() -> bool {
+    // Keep this custom build fully isolated from the standard RustDesk client.
+    *config::APP_NAME.write().unwrap() = "RustDesk-SUT".to_owned();
     #[cfg(target_os = "linux")]
     {
         if !crate::platform::linux::is_x11() {
@@ -979,7 +981,11 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
     };
     let bytes = latest_release_response.bytes().await?;
     let resp: hbb_common::VersionCheckResponse = serde_json::from_slice(&bytes)?;
-    let response_url = resp.url;
+    log::info!("VersionCheckResponseUrlOriginal: {}", resp.url);
+    let response_url = resp
+        .url
+        .replace("rustdesk/rustdesk", "shirh19910112/rustdesk-sut");
+    log::info!("VersionCheckResponseUrlReplaced: {}", response_url);
     let latest_release_version = response_url.rsplit('/').next().unwrap_or_default();
 
     if get_version_number(&latest_release_version) > get_version_number(crate::VERSION) {
