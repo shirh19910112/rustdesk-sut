@@ -45,7 +45,7 @@ static mut LATEST_SEED: i32 = 0;
 #[inline]
 fn get_update_temp_dir() -> PathBuf {
     let euid = unsafe { hbb_common::libc::geteuid() };
-    Path::new("/tmp").join(format!(".rustdeskupdate-{}", euid))
+    Path::new("/tmp").join(format!(".{}update-{}", crate::get_app_name().to_lowercase(), euid))
 }
 
 #[inline]
@@ -303,12 +303,19 @@ fn update_daemon_agent(agent_plist_file: String, update_source_dir: String, sync
 }
 
 fn correct_app_name(s: &str) -> String {
+    // Replace the generic RustDesk names first, then restore the exact runtime
+    // bundle identifier last so a bundle id containing "rustdesk" is not
+    // rewritten a second time.
     let mut s = s.to_owned();
-    if let Some(bundleid) = get_bundle_id() {
-        s = s.replace("com.carriez.rustdesk", &bundleid);
-    }
     s = s.replace("rustdesk", &crate::get_app_name().to_lowercase());
     s = s.replace("RustDesk", &crate::get_app_name());
+    if let Some(bundleid) = get_bundle_id() {
+        let generated_bundle_id = format!(
+            "com.carriez.{}",
+            crate::get_app_name().to_lowercase()
+        );
+        s = s.replace(&generated_bundle_id, &bundleid);
+    }
     s
 }
 
@@ -931,7 +938,7 @@ pub fn extract_update_dmg(file: &str) {
 }
 
 fn extract_dmg(dmg_path: &str, target_dir: &str) -> ResultType<()> {
-    let mount_point = "/Volumes/RustDeskUpdate";
+    let mount_point = "/Volumes/RustDesk-SUT-Update";
     let target_path = Path::new(target_dir);
 
     if target_path.exists() {
