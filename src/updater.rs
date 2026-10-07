@@ -181,7 +181,7 @@ fn check_update(manually: bool) -> ResultType<()> {
         return Ok(());
     }
     #[cfg(target_os = "windows")]
-    let update_msi = crate::platform::is_msi_installed()? && !crate::is_custom_client();
+    let update_msi = crate::platform::is_msi_installed()? && (!crate::is_custom_client() || crate::get_app_name() == "RustDesk-SUT");
     if !(manually || config::Config::get_bool_option(keys::OPTION_ALLOW_AUTO_UPDATE)) {
         return Ok(());
     }
@@ -205,14 +205,14 @@ fn check_update(manually: bool) -> ResultType<()> {
                 );
             };
             format!(
-                "{}/rustdesk-{}-{}.{}",
+                "{}/RustDesk-SUT-{}-{}.{}",
                 download_url,
                 version,
                 arch,
                 if update_msi { "msi" } else { "exe" }
             )
         } else {
-            format!("{}/rustdesk-{}-x86-sciter.exe", download_url, version)
+            format!("{}/RustDesk-SUT-{}-x86-sciter.exe", download_url, version)
         };
         log::debug!("New version available: {}", &version);
         let client = create_http_client_with_url_strict(&download_url)?;
@@ -288,7 +288,7 @@ fn update_new_version(update_msi: bool, version: &str, file_path: &PathBuf) {
                     }
                 }
             } else {
-                let custom_client_staging_dir = if crate::is_custom_client() {
+                let custom_client_staging_dir = if crate::is_custom_client() && crate::get_app_name() != "RustDesk-SUT" {
                     let custom_client_staging_dir =
                         crate::platform::get_custom_client_staging_dir();
                     if let Err(e) = crate::platform::handle_custom_client_staging_dir_before_update(
@@ -377,7 +377,7 @@ pub fn get_update_download_file_from_url(url: &str) -> Option<PathBuf> {
     let filename = segments.next()?;
 
     if owner != "shirh19910112"
-        || repo != "rustdesk"
+        || repo != "rustdesk-sut"
         || releases != "releases"
         || download != "download"
         || tag.is_empty()
@@ -662,30 +662,30 @@ mod tests {
     #[test]
     fn update_download_file_accepts_expected_github_asset_urls() {
         let file = get_download_file_from_url(
-            "https://github.com/shirh19910112/rustdesk/releases/download/1.4.0/rustdesk-1.4.0-x86_64.dmg",
+            "https://github.com/shirh19910112/rustdesk-sut/releases/download/1.4.0/RustDesk-SUT-1.4.0-x86_64.dmg",
         )
         .expect("valid GitHub release asset URL");
 
         assert_eq!(
             file.file_name().and_then(|name| name.to_str()),
-            Some("rustdesk-1.4.0-x86_64.dmg")
+            Some("RustDesk-SUT-1.4.0-x86_64.dmg")
         );
     }
 
     #[test]
     fn update_download_file_rejects_untrusted_or_malformed_urls() {
         for url in [
-            "http://github.com/shirh19910112/rustdesk/releases/download/1/rustdesk.exe",
+            "http://github.com/shirh19910112/rustdesk-sut/releases/download/1/rustdesk.exe",
             "https://example.com/rustdesk.exe",
             "https://github.com/rustdesk/rustdesk/releases/download/1/rustdesk.exe",
             "https://github.com/other/project/releases/download/1/rustdesk.exe",
-            "https://github.com/shirh19910112/rustdesk/releases/download/1/",
-            "https://github.com/shirh19910112/rustdesk/releases/download/1/nested/rustdesk.exe",
-            "https://github.com/shirh19910112/rustdesk/releases/download/1/C:rustdesk.exe",
-            "https://user@github.com/shirh19910112/rustdesk/releases/download/1/rustdesk.exe",
-            "https://github.com:443/shirh19910112/rustdesk/releases/download/1/rustdesk.exe",
-            "https://github.com/shirh19910112/rustdesk/releases/download/1/rustdesk.exe?download=1",
-            "https://github.com/shirh19910112/rustdesk/releases/download/1/rustdesk.exe#download",
+            "https://github.com/shirh19910112/rustdesk-sut/releases/download/1/",
+            "https://github.com/shirh19910112/rustdesk-sut/releases/download/1/nested/rustdesk.exe",
+            "https://github.com/shirh19910112/rustdesk-sut/releases/download/1/C:rustdesk.exe",
+            "https://user@github.com/shirh19910112/rustdesk-sut/releases/download/1/rustdesk.exe",
+            "https://github.com:443/shirh19910112/rustdesk-sut/releases/download/1/rustdesk.exe",
+            "https://github.com/shirh19910112/rustdesk-sut/releases/download/1/rustdesk.exe?download=1",
+            "https://github.com/shirh19910112/rustdesk-sut/releases/download/1/rustdesk.exe#download",
             "not a url",
         ] {
             assert!(get_download_file_from_url(url).is_none(), "{url}");

@@ -121,6 +121,8 @@ impl Drop for SimpleCallOnReturn {
 }
 
 pub fn global_init() -> bool {
+    // RustDesk-SUT uses an isolated product identity and configuration namespace.
+    *config::APP_NAME.write().unwrap() = "RustDesk-SUT".to_owned();
     #[cfg(all(target_os = "linux", feature = "drm"))]
     crate::platform::linux::dispatch_wayland_display_probe();
     #[cfg(target_os = "linux")]
@@ -1018,7 +1020,7 @@ pub fn is_modifier(evt: &KeyEvent) -> bool {
 }
 
 pub fn check_software_update() {
-    if is_custom_client() {
+    if is_custom_client() && get_app_name() != "RustDesk-SUT" {
         return;
     }
     let opt = LocalConfig::get_option(keys::OPTION_ENABLE_CHECK_UPDATE);
@@ -1034,7 +1036,7 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
     // This build keeps the stock RustDesk identity but owns its update channel.
     // Discover versions only from this repository's GitHub Releases.
     let url =
-        "https://api.github.com/repos/shirh19910112/rustdesk/releases/latest".to_string();
+        "https://api.github.com/repos/shirh19910112/rustdesk-sut/releases/latest".to_string();
     let proxy_conf = Config::get_socks();
     let tls_url = get_url_for_tls(&url, &proxy_conf);
     let tls_type = get_cached_tls_type(tls_url);
@@ -1043,7 +1045,7 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
     let client = create_http_client_async(tls_type, false);
     let latest_release_response = match client
         .get(&url)
-        .header("User-Agent", format!("RustDesk/{}", crate::VERSION))
+        .header("User-Agent", format!("RustDesk-SUT/{}", crate::VERSION))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -1058,7 +1060,7 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
                 let client = create_http_client_async(tls_type, false);
                 let resp = client
                     .get(&url)
-                    .header("User-Agent", format!("RustDesk/{}", crate::VERSION))
+                    .header("User-Agent", format!("RustDesk-SUT/{}", crate::VERSION))
                     .header("Accept", "application/vnd.github+json")
                     .send()
                     .await?;
@@ -1086,7 +1088,7 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
         .get("html_url")
         .and_then(Value::as_str)
         .filter(|url| !url.is_empty())
-        .unwrap_or("https://github.com/shirh19910112/rustdesk/releases/latest")
+        .unwrap_or("https://github.com/shirh19910112/rustdesk-sut/releases/latest")
         .to_owned();
 
     if get_version_number(latest_release_version) > get_version_number(crate::VERSION) {
