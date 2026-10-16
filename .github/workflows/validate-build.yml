@@ -1,0 +1,12 @@
+﻿name: Validate RustDesk Build
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  validate:
+    uses: ./.github/workflows/flutter-build.yml
+    secrets: inherit
+    with:
+      upload-artifact: false
+      upload-tag: validation
