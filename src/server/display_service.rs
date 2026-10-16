@@ -24,6 +24,10 @@ const HEADLESS_TRANSIENT_RETRY_INTERVAL_MS: u64 = 250;
 const HEADLESS_READY_RETRY_COUNT: usize = 25;
 #[cfg(windows)]
 const HEADLESS_READY_RETRY_INTERVAL_MS: u64 = 100;
+#[cfg(windows)]
+const HEADLESS_CAPTURE_CONFIRM_RETRY_COUNT: usize = 2;
+#[cfg(windows)]
+const HEADLESS_CAPTURE_CONFIRM_RETRY_INTERVAL_MS: u64 = 500;
 
 struct ChangedResolution {
     original: (i32, i32),
@@ -361,9 +365,8 @@ fn refresh_wayland_uinput_rect_if_changed() {
         #[cfg(not(feature = "drm"))]
         let generation = 0;
         let live_changed = layout.edge(&live_rects, snapshot_missing, generation);
-        let drifted = !layout.baseline.is_empty()
-            && !live_rects.is_empty()
-            && layout.baseline != live_rects;
+        let drifted =
+            !layout.baseline.is_empty() && !live_rects.is_empty() && layout.baseline != live_rects;
         layout.observe(&live_rects);
         (live_changed, drifted)
     };
@@ -899,6 +902,136 @@ pub fn is_inited_msg() -> Option<Message> {
     None
 }
 
+#[cfg(windows)]
+fn managed_virtual_display_index(displays: &[Display]) -> Option<usize> {
+    displays.iter().position(|display| {
+        let name = display.name();
+        virtual_display_manager::rustdesk_idd::is_virtual_display(&name)
+            || virtual_display_manager::amyuni_idd::is_my_display(&name)
+    })
+}
+#[cfg(windows)]
+fn probe_capturable_display(displays: &[Display], preferred: usize) -> Option<usize> {
+    if displays.is_empty() {
+        return None;
+    }
+    let mut order = Vec::with_capacity(displays.len());
+    if preferred < displays.len() {
+        order.push(preferred);
+    }
+    for idx in 0..displays.len() {
+        if idx != preferred {
+            order.push(idx);
+        }
+    }
+    for idx in order {
+        if super::video_service::probe_monitor_first_frame(idx) {
+            return Some(idx);
+        }
+    }
+    None
+}
+#[cfg(windows)]
+fn select_capturable_windows_display(mut displays: Vec<Display>) -> (Vec<Display>, usize) {
+    let mut preferred = get_primary_2(&displays);
+    // A desktop/session switch can temporarily make capture unavailable.
+    // Confirm the failure twice before treating the machine as effectively headless.
+    for round in 1..=HEADLESS_CAPTURE_CONFIRM_RETRY_COUNT {
+        if let Some(idx) = probe_capturable_display(&displays, preferred) {
+            if round > 1 {
+                log::info!(
+                    "physical display capture recovered during headless confirmation round {}",
+                    round
+                );
+            }
+            return (displays, idx);
+        }
+        if round < HEADLESS_CAPTURE_CONFIRM_RETRY_COUNT {
+            log::info!(
+                "all displays failed capture probe; waiting before headless confirmation round {}/{}",
+                round + 1,
+                HEADLESS_CAPTURE_CONFIRM_RETRY_COUNT
+            );
+            std::thread::sleep(std::time::Duration::from_millis(
+                HEADLESS_CAPTURE_CONFIRM_RETRY_INTERVAL_MS,
+            ));
+            match Display::all() {
+                Ok(refreshed) => {
+                    displays = refreshed;
+                    preferred = get_primary_2(&displays);
+                }
+                Err(err) => {
+                    log::warn!(
+                        "display enumeration failed during effective-headless confirmation: {}",
+                        err
+                    );
+                }
+            }
+        }
+    }
+    if !crate::platform::is_installed() || !virtual_display_manager::is_virtual_display_supported()
+    {
+        log::warn!(
+            "all displays failed capture probes, but virtual display fallback is unavailable"
+        );
+        return (
+            displays,
+            normalize_primary_display_idx(preferred, displays.len()),
+        );
+    }
+    log::warn!(
+        "all physical displays failed DXGI/GDI capture probes; entering effective-headless recovery"
+    );
+    // Another remote connection may already have created a managed virtual
+    // display while we were confirming the physical displays.
+    if let Some(idx) = managed_virtual_display_index(&displays) {
+        log::info!(
+            "effective-headless recovery found existing managed virtual display {}",
+            idx
+        );
+        return (displays, idx);
+    }
+    if let Err(err) = virtual_display_manager::plug_in_headless() {
+        // This may simply mean another connection requested the display in
+        // parallel ("Plugging in too frequently"). Continue waiting below.
+        log::warn!(
+            "headless virtual display request returned: {}; waiting for an existing/in-flight display",
+            err
+        );
+    }
+    for attempt in 1..=HEADLESS_READY_RETRY_COUNT {
+        std::thread::sleep(std::time::Duration::from_millis(
+            HEADLESS_READY_RETRY_INTERVAL_MS,
+        ));
+        match Display::all() {
+            Ok(refreshed) => {
+                displays = refreshed;
+                if let Some(idx) = managed_virtual_display_index(&displays) {
+                    log::info!(
+                        "effective-headless virtual display ready at index {}, attempt {}/{}",
+                        idx,
+                        attempt,
+                        HEADLESS_READY_RETRY_COUNT
+                    );
+                    return (displays, idx);
+                }
+            }
+            Err(err) => {
+                log::warn!(
+                    "display enumeration failed while waiting for effective-headless virtual display, attempt {}/{}: {}",
+                    attempt,
+                    HEADLESS_READY_RETRY_COUNT,
+                    err
+                );
+            }
+        }
+    }
+    log::error!("effective-headless recovery failed: managed virtual display did not become ready");
+    (
+        displays,
+        normalize_primary_display_idx(preferred, displays.len()),
+    )
+}
 // Return the primary index with the refreshed list so login cannot mix display snapshots.
 pub async fn update_get_sync_displays_on_login() -> ResultType<(Vec<DisplayInfo>, usize)> {
     #[cfg(target_os = "linux")]
@@ -911,16 +1044,24 @@ pub async fn update_get_sync_displays_on_login() -> ResultType<(Vec<DisplayInfo>
             return Ok((displays, primary_display_idx));
         }
     }
-    #[cfg(not(windows))]
-    let displays = display_service::try_get_displays();
     #[cfg(windows)]
-    let displays = display_service::try_get_displays_add_amyuni_headless();
-    let displays = displays?;
-    let primary_display_idx = get_primary_2(&displays);
-    let sync_displays = update_sync_displays(&displays);
-    let primary_display_idx =
-        normalize_primary_display_idx(primary_display_idx, sync_displays.len());
-    Ok((sync_displays, primary_display_idx))
+    {
+        let displays = display_service::try_get_displays_add_amyuni_headless()?;
+        let (displays, primary_display_idx) = select_capturable_windows_display(displays);
+        let sync_displays = update_sync_displays(&displays);
+        let primary_display_idx =
+            normalize_primary_display_idx(primary_display_idx, sync_displays.len());
+        return Ok((sync_displays, primary_display_idx));
+    }
+    #[cfg(not(windows))]
+    {
+        let displays = display_service::try_get_displays()?;
+        let primary_display_idx = get_primary_2(&displays);
+        let sync_displays = update_sync_displays(&displays);
+        let primary_display_idx =
+            normalize_primary_display_idx(primary_display_idx, sync_displays.len());
+        Ok((sync_displays, primary_display_idx))
+    }
 }
 
 #[inline]
@@ -1057,9 +1198,7 @@ pub fn try_get_displays_(add_amyuni_headless: bool) -> ResultType<Vec<Display>> 
     }
 
     if no_displays(&displays) {
-        log::info!(
-            "no usable displays after debounce; creating headless virtual display"
-        );
+        log::info!("no usable displays after debounce; creating headless virtual display");
         if let Err(e) = virtual_display_manager::plug_in_headless() {
             log::error!("plug in headless failed {}", e);
         } else {
@@ -1097,8 +1236,7 @@ pub fn try_get_displays_(add_amyuni_headless: bool) -> ResultType<Vec<Display>> 
             if !ready {
                 log::error!(
                     "headless virtual display did not become ready within {} ms",
-                    HEADLESS_READY_RETRY_COUNT
-                        * HEADLESS_READY_RETRY_INTERVAL_MS as usize
+                    HEADLESS_READY_RETRY_COUNT * HEADLESS_READY_RETRY_INTERVAL_MS as usize
                 );
             }
         }
@@ -1138,7 +1276,11 @@ mod input_map_tests {
         let before = input_map_epoch();
         note_input_map_unknown();
         assert_eq!(input_map_gen(), u64::MAX, "no generation is ready");
-        assert_eq!(input_map_epoch(), before + 1, "samples from before do not count");
+        assert_eq!(
+            input_map_epoch(),
+            before + 1,
+            "samples from before do not count"
+        );
         assert_eq!(wayland_uinput_rect(), None, "the poll applies again");
     }
 
@@ -1206,7 +1348,10 @@ mod input_map_tests {
     fn a_uinput_apply_thread_that_died_is_started_again() {
         let _worker = WORKER.lock().unwrap_or_else(|p| p.into_inner());
         let died = run_uinput_apply(|_| panic!("the apply thread dies here"));
-        assert!(died.blocking_recv().is_err(), "the job that killed it has no answer");
+        assert!(
+            died.blocking_recv().is_err(),
+            "the job that killed it has no answer"
+        );
         // A job asked while the dying thread still unwinds is lost with it; a later one runs.
         let answered = (0..50).find_map(|_| {
             let answer = run_uinput_apply(|_| 7).blocking_recv().ok();
@@ -1309,7 +1454,10 @@ mod wayland_layout_tests {
         let mut l = WaylandLayout::default();
         l.observe(&upright);
         l.note_capturer(&rotated, 0);
-        assert!(l.edge(&rotated, false, 0), "the poll's memory still says upright");
+        assert!(
+            l.edge(&rotated, false, 0),
+            "the poll's memory still says upright"
+        );
     }
 
     // The constructor's snapshot read and its `note_capturer` are two steps, and the poll can
@@ -1324,10 +1472,16 @@ mod wayland_layout_tests {
         let rotated = layout(1080, 1920, 1);
         let mut l = WaylandLayout::default();
         l.reset_baseline(Vec::new());
-        assert!(!l.edge(&rotated, false, 0), "nothing recorded and the snapshot is present");
+        assert!(
+            !l.edge(&rotated, false, 0),
+            "nothing recorded and the snapshot is present"
+        );
         l.observe(&rotated);
         l.note_capturer(&upright, 0);
-        assert!(l.edge(&rotated, false, 0), "the capturer is built on upright, live is rotated");
+        assert!(
+            l.edge(&rotated, false, 0),
+            "the capturer is built on upright, live is rotated"
+        );
 
         // The promotion consumes it: the next poll sees the same layout and stays quiet.
         l.observe(&rotated);
@@ -1367,7 +1521,10 @@ mod wayland_layout_tests {
         l.observe(&rotated);
         l.note_capturer(&upright, 7);
         l.reset_baseline(rotated.clone());
-        assert!(!l.edge(&rotated, false, 8), "the capturer built at 7 rebuilds on its own");
+        assert!(
+            !l.edge(&rotated, false, 8),
+            "the capturer built at 7 rebuilds on its own"
+        );
 
         // Control: a disagreeing record AT the promoted generation is a real edge.
         l.observe(&rotated);

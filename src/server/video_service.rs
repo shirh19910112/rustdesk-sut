@@ -70,6 +70,12 @@ const DXGI_RECOVERY_LIMIT: usize = 3;
 const DXGI_RECOVERY_WINDOW: Duration = Duration::from_secs(10);
 #[cfg(windows)]
 const DXGI_RECOVERY_FRAME_GRACE: Duration = Duration::from_secs(2);
+#[cfg(windows)]
+const HEADLESS_CAPTURE_PROBE_TIMEOUT_MS: u64 = 900;
+#[cfg(windows)]
+const HEADLESS_CAPTURE_GDI_AFTER_MS: u64 = 300;
+#[cfg(windows)]
+const HEADLESS_CAPTURE_FRAME_WAIT_MS: u64 = 80;
 
 #[cfg(windows)]
 struct DxgiRecoveryState {
@@ -541,6 +547,85 @@ fn get_capturer_monitor(
     })
 }
 
+#[cfg(windows)]
+pub(super) fn probe_monitor_first_frame(current: usize) -> bool {
+    // A powered-off monitor can remain enumerated by Windows with normal geometry.
+    // Display enumeration alone therefore cannot tell us whether the screen is
+    // actually capturable. Probe DXGI first and then GDI before declaring it dead.
+    let portable_service_running = crate::portable_service::client::running();
+    let mut capturer = match get_capturer_monitor(current, portable_service_running) {
+        Ok(capturer) => capturer,
+        Err(err) => {
+            log::warn!(
+                "headless probe: failed to create capturer for display {}: {:?}",
+                current,
+                err
+            );
+            return false;
+        }
+    };
+    let started = Instant::now();
+    let mut gdi_attempted = capturer.is_gdi();
+    loop {
+        let was_gdi = capturer.is_gdi();
+        match capturer.frame(Duration::from_millis(HEADLESS_CAPTURE_FRAME_WAIT_MS)) {
+            Ok(frame) => {
+                if frame.valid() {
+                    log::info!(
+                        "headless probe: display {} produced a valid frame via {}",
+                        current,
+                        if was_gdi { "gdi" } else { "dxgi" }
+                    );
+                    return true;
+                }
+            }
+            Err(err) if err.kind() == WouldBlock => {}
+            Err(err) => {
+                if was_gdi {
+                    log::warn!(
+                        "headless probe: display {} failed via gdi: {:?}",
+                        current,
+                        err
+                    );
+                    return false;
+                }
+                log::debug!("headless probe: display {} dxgi failed: {:?}", current, err);
+                if !capturer.set_gdi() {
+                    log::warn!(
+                        "headless probe: display {} could not create gdi capturer",
+                        current
+                    );
+                    return false;
+                }
+                gdi_attempted = true;
+            }
+        }
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        if elapsed_ms >= HEADLESS_CAPTURE_PROBE_TIMEOUT_MS {
+            log::warn!(
+                "headless probe: display {} produced no valid frame within {} ms",
+                current,
+                HEADLESS_CAPTURE_PROBE_TIMEOUT_MS
+            );
+            return false;
+        }
+        if !gdi_attempted && elapsed_ms >= HEADLESS_CAPTURE_GDI_AFTER_MS {
+            log::debug!(
+                "headless probe: display {} has no dxgi frame; trying gdi",
+                current
+            );
+            if !capturer.set_gdi() {
+                log::warn!(
+                    "headless probe: display {} could not switch to gdi",
+                    current
+                );
+                return false;
+            }
+            gdi_attempted = true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
 fn get_capturer_camera(current: usize) -> ResultType<CapturerInfo> {
     let cameras = camera::Cameras::get_sync_cameras();
     let ncamera = cameras.len();
