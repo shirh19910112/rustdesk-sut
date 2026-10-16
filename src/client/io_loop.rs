@@ -8,7 +8,7 @@ use crate::{
         QualityStatus, MILLI1, SEC30,
     },
     common::get_default_sound_input,
-    ui_session_interface::{InvokeUiSession, Session},
+    ui_session_interface::{InsecureConnectionPolicy, InvokeUiSession, Session},
 };
 
 // Empirical no-data window before exposing the restart reconnect state to the UI.
@@ -217,16 +217,51 @@ impl<T: InvokeUiSession> Remote<T> {
                 };
                 self.handler
                     .set_connection_type(is_secured, direct, stream_type); // flutter -> connection_ready
-                if !is_secured
-                    && !crate::common::is_direct_ip_access(&self.handler.get_id())
-                    && !client::confirm_insecure_connection(&self.handler, &mut self.receiver).await
-                {
-                    self.send_close_reason(&mut peer, "").await;
-                    if kcp.is_some() {
-                        tokio::time::sleep(KCP_CLOSE_REASON_FLUSH_DELAY).await;
+                if is_secured {
+                    // Once this UI session has established an authenticated transport,
+                    // any later insecure round is a security downgrade and must never
+                    // inherit earlier insecure consent silently.
+                    self.handler.mark_connection_secured();
+                } else if !crate::common::is_direct_ip_access(&self.handler.get_id()) {
+                    match self.handler.insecure_connection_policy() {
+                        InsecureConnectionPolicy::Allow => {
+                            // The user already accepted insecure transport for this UI
+                            // session. A transport reconnect alone must not ask again.
+                            log::info!(
+                                "reusing accepted insecure-connection consent for reconnect round {}",
+                                round
+                            );
+                        }
+                        policy @ (InsecureConnectionPolicy::Confirm
+                        | InsecureConnectionPolicy::ConfirmDowngrade) => {
+                            let is_downgrade =
+                                matches!(policy, InsecureConnectionPolicy::ConfirmDowngrade);
+                            if is_downgrade {
+                                log::warn!(
+                                    "connection security downgrade on reconnect round {}: secured -> insecure; requiring explicit confirmation",
+                                    round
+                                );
+                            } else {
+                                log::info!(
+                                    "first insecure connection in session; requesting explicit confirmation"
+                                );
+                            }
+                            if !client::confirm_insecure_connection(
+                                &self.handler,
+                                &mut self.receiver,
+                            )
+                            .await
+                            {
+                                self.send_close_reason(&mut peer, "").await;
+                                if kcp.is_some() {
+                                    tokio::time::sleep(KCP_CLOSE_REASON_FLUSH_DELAY).await;
+                                }
+                                self.handle_disconnected(round);
+                                return;
+                            }
+                            self.handler.mark_insecure_connection_accepted();
+                        }
                     }
-                    self.handle_disconnected(round);
-                    return;
                 }
                 self.handler.update_direct(Some(direct));
                 if conn_type == ConnType::DEFAULT_CONN || conn_type == ConnType::VIEW_CAMERA {
@@ -690,7 +725,10 @@ impl<T: InvokeUiSession> Remote<T> {
     // Capture after readiness so changes during the read can invalidate the snapshot.
     // A separate task keeps a stalled backend from blocking the connection loop.
     #[cfg(target_os = "linux")]
-    fn spawn_initial_clipboard_read_after_ready(&self, read_clipboard: impl FnOnce() + Send + 'static) {
+    fn spawn_initial_clipboard_read_after_ready(
+        &self,
+        read_clipboard: impl FnOnce() + Send + 'static,
+    ) {
         // Initial-sync wait budget, not a protocol-defined startup deadline.
         const CLIPBOARD_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -777,7 +815,8 @@ impl<T: InvokeUiSession> Remote<T> {
                         return true;
                     }
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                    Some(message::Union::Clipboard(_)) | Some(message::Union::MultiClipboards(_)) => {
+                    Some(message::Union::Clipboard(_))
+                    | Some(message::Union::MultiClipboards(_)) => {
                         self.initial_clipboard_pending = false;
                     }
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]

@@ -70,6 +70,7 @@ pub struct Session<T: InvokeUiSession> {
     pub server_clipboard_enabled: Arc<RwLock<bool>>,
     pub last_change_display: Arc<Mutex<ChangeDisplayRecord>>,
     pub connection_round_state: Arc<Mutex<ConnectionRoundState>>,
+    connection_security_state: Arc<Mutex<ConnectionSecurityState>>,
     pub printer_names: Arc<RwLock<HashMap<i32, String>>>,
     // Indicate whether the session is reconnected.
     // Used to auto start file transfer after reconnection.
@@ -101,6 +102,28 @@ enum ConnectionState {
     Connecting,
     Connected,
     Disconnected,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ConnectionSecurityState {
+    #[default]
+    Unknown,
+    Secure,
+    InsecureAccepted,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InsecureConnectionPolicy {
+    Allow,
+    Confirm,
+    ConfirmDowngrade,
+}
+impl ConnectionSecurityState {
+    fn insecure_policy(self) -> InsecureConnectionPolicy {
+        match self {
+            Self::Unknown => InsecureConnectionPolicy::Confirm,
+            Self::Secure => InsecureConnectionPolicy::ConfirmDowngrade,
+            Self::InsecureAccepted => InsecureConnectionPolicy::Allow,
+        }
+    }
 }
 
 /// ConnectionRoundState is used to control the reconnecting logic.
@@ -201,6 +224,29 @@ impl SessionPermissionConfig {
 }
 
 impl<T: InvokeUiSession> Session<T> {
+    pub(crate) fn mark_connection_secured(&self) {
+        let mut state = self.connection_security_state.lock().unwrap();
+        if *state != ConnectionSecurityState::Secure {
+            log::info!("connection security state changed: {:?} -> Secure", *state);
+        }
+        *state = ConnectionSecurityState::Secure;
+    }
+    pub(crate) fn insecure_connection_policy(&self) -> InsecureConnectionPolicy {
+        self.connection_security_state
+            .lock()
+            .unwrap()
+            .insecure_policy()
+    }
+    pub(crate) fn mark_insecure_connection_accepted(&self) {
+        let mut state = self.connection_security_state.lock().unwrap();
+        if *state != ConnectionSecurityState::InsecureAccepted {
+            log::info!(
+                "connection security state changed: {:?} -> InsecureAccepted",
+                *state
+            );
+        }
+        *state = ConnectionSecurityState::InsecureAccepted;
+    }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn get_permission_config(&self) -> SessionPermissionConfig {
         SessionPermissionConfig {
