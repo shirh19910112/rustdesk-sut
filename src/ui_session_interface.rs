@@ -70,7 +70,7 @@ pub struct Session<T: InvokeUiSession> {
     pub server_clipboard_enabled: Arc<RwLock<bool>>,
     pub last_change_display: Arc<Mutex<ChangeDisplayRecord>>,
     pub connection_round_state: Arc<Mutex<ConnectionRoundState>>,
-    connection_security_state: Arc<Mutex<ConnectionSecurityState>>,
+    pub(crate) connection_security_state: Arc<Mutex<ConnectionSecurityState>>,
     pub printer_names: Arc<RwLock<HashMap<i32, String>>>,
     // Indicate whether the session is reconnected.
     // Used to auto start file transfer after reconnection.
@@ -104,7 +104,7 @@ enum ConnectionState {
     Disconnected,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum ConnectionSecurityState {
+pub(crate) enum ConnectionSecurityState {
     #[default]
     Unknown,
     Secure,

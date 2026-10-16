@@ -974,9 +974,10 @@ fn select_capturable_windows_display(mut displays: Vec<Display>) -> (Vec<Display
         log::warn!(
             "all displays failed capture probes, but virtual display fallback is unavailable"
         );
+        let display_len = displays.len();
         return (
             displays,
-            normalize_primary_display_idx(preferred, displays.len()),
+            normalize_primary_display_idx(preferred, display_len),
         );
     }
     log::warn!(
@@ -1027,9 +1028,10 @@ fn select_capturable_windows_display(mut displays: Vec<Display>) -> (Vec<Display
         }
     }
     log::error!("effective-headless recovery failed: managed virtual display did not become ready");
+    let display_len = displays.len();
     (
         displays,
-        normalize_primary_display_idx(preferred, displays.len()),
+        normalize_primary_display_idx(preferred, display_len),
     )
 }
 // Return the primary index with the refreshed list so login cannot mix display snapshots.
