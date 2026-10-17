@@ -1,8 +1,8 @@
-name: Package Windows Validation
+﻿name: Package Windows Validation
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   package:
     if: github.ref_name == 'rustdesk-sut-1.5.0'
@@ -12,3 +12,4 @@ jobs:
       upload-artifact: false
       package-validation: true
       upload-tag: validation
+
