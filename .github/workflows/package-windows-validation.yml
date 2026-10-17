@@ -1,0 +1,14 @@
+name: Package Windows Validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    if: github.ref_name == 'rustdesk-sut-1.5.0'
+    uses: ./.github/workflows/flutter-build.yml
+    secrets: inherit
+    with:
+      upload-artifact: false
+      package-validation: true
+      upload-tag: validation
